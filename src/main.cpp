@@ -10,7 +10,7 @@ int main() {
     int gridWidth = 320;
     int gridHeight = 180;
 
-    float proportion = 0.05f;
+    float proportion = 0.2f;
     int totalParticles = static_cast<int>(proportion * gridWidth * gridHeight);
     auto system = makeCellSystem(gridWidth, gridHeight, proportion, 0.2, twister);
     int energy = -countContancts(system);
@@ -67,6 +67,8 @@ int main() {
 
         glfwSwapBuffers(window);
     }
+
+    printf("%i %i\n", energy, -countContancts(system));
 
     glfwTerminate();
 }

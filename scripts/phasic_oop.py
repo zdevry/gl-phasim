@@ -56,6 +56,10 @@ class GSystem:
         swap_bi = self.blank_idxs[swap_bli]
 
         energy_change = self.get_adjacent_i(swap_fi) - self.get_adjacent_i(swap_bi)
+        diff = np.abs(swap_fi - swap_bi)
+        if diff == 1 or diff == self.width:
+            energy_change += 1
+
         acceptance = np.exp(-energy_change / self.temperature)
 
         if rng.uniform() > acceptance:

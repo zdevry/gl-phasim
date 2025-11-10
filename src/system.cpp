@@ -46,7 +46,6 @@ int getAdjacentByIdx(const GridcellSystem& system, int idx) {
     int i = idx % system.width;
     int j = idx / system.width;
 
-
     return getAdjacent(system, i, j);
 }
 
@@ -57,6 +56,11 @@ int metropolisStep(GridcellSystem& system, std::mt19937& twister) {
     int swapBi = system.blankIdxs[swapBli];
 
     int energyChange = getAdjacentByIdx(system, swapFi) - getAdjacentByIdx(system, swapBi);
+    int idxDifference = abs(swapFi - swapBi);
+    if (idxDifference == 1 || idxDifference == system.width) { // account for adjacencies
+        ++energyChange;
+    }
+
     float acceptance = std::exp(-energyChange / system.temperature);
 
     if (system.acceptanceSampler(twister) > acceptance)
@@ -75,7 +79,10 @@ int metropolisStep(GridcellSystem& system, std::mt19937& twister) {
 int countContancts(const GridcellSystem& system) {
     int totalContacts = 0;
     for (int j = 0; j < system.height; ++j)
-        for (int i = 0; i < system.width; ++i)
+        for (int i = 0; i < system.width; ++i) {
+            if (!isFilled(system, i, j)) continue;
+
             totalContacts += getAdjacent(system, i, j);
+        }
     return totalContacts / 2;
 }
