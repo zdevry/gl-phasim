@@ -8,5 +8,5 @@ uniform sampler2D textsheet;
 
 void main() {
     float alpha = texture(textsheet, texCoord).r;
-    colour = vec4(1.0, 1.0, 1.0, alpha);
+    colour = mix(vec4(0.0, 0.0, 0.0, 0.5), vec4(1.0), alpha);
 }
