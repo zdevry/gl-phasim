@@ -10,7 +10,9 @@ int main() {
     int gridWidth = 320;
     int gridHeight = 180;
 
-    auto system = makeCellSystem(gridWidth, gridHeight, 0.1, 0.2, twister);
+    float proportion = 0.05f;
+    int totalParticles = static_cast<int>(proportion * gridWidth * gridHeight);
+    auto system = makeCellSystem(gridWidth, gridHeight, proportion, 0.2, twister);
     int energy = -countContancts(system);
 
     int winWidth = 1280;
@@ -56,7 +58,8 @@ int main() {
 
         char textBuffer[64];
 
-        sprintf(textBuffer, "E = %i", energy);
+        float energyPerParticle = static_cast<float>(energy) / totalParticles;
+        sprintf(textBuffer, "E = %.3f", energyPerParticle);
         drawText(textRes, textBuffer, -1.f + 0.1 / aspect, 0.9f, 0.05f);
 
         sprintf(textBuffer, "T = %.3f", system.temperature);
