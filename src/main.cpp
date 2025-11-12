@@ -5,6 +5,7 @@
 #include "text.hpp"
 #include "system.hpp"
 #include "grid.hpp"
+#include "plot.hpp"
 
 struct ProgramInput {
     int gridWidth;
@@ -18,6 +19,8 @@ struct ProgramInput {
     int debug;
 
     int metropolisStepsPerFrame;
+    int plotSkip;
+    int plotLength;
     float textWidth;
     float textMargin;
 
@@ -30,6 +33,9 @@ struct ProgramInput {
 
     std::string gridVertPath;
     std::string gridFragPath;
+
+    std::string plotVertPath;
+    std::string plotFragPath;
 };
 
 std::string readConfigLine(std::ifstream& f) {
@@ -58,6 +64,8 @@ ProgramInput readProgramInputFromFile(const char* path) {
     input.vsync = stoi(readConfigLine(f));
     input.debug = stoi(readConfigLine(f));
     input.metropolisStepsPerFrame = stoi(readConfigLine(f));
+    input.plotSkip = stoi(readConfigLine(f));
+    input.plotLength = stoi(readConfigLine(f));
     input.textWidth = stof(readConfigLine(f));
     input.textMargin = stof(readConfigLine(f));
     input.textsheetPath = readConfigLine(f);
@@ -68,6 +76,8 @@ ProgramInput readProgramInputFromFile(const char* path) {
     input.textFragPath = readConfigLine(f);
     input.gridVertPath = readConfigLine(f);
     input.gridFragPath = readConfigLine(f);
+    input.plotVertPath = readConfigLine(f);
+    input.plotFragPath = readConfigLine(f);
 
     f.close();
 
@@ -90,9 +100,12 @@ int main(int argc, const char** argv) {
 
     GLFWwindow* window = initWindow(input.winWidth, input.winHeight, input.vsync, input.debug);
 
-    glfwSetWindowUserPointer(window, &system.temperature);
+    void* callbackRes[2] = { &system.temperature, &input.metropolisStepsPerFrame };
+    glfwSetWindowUserPointer(window, callbackRes);
+
     glfwSetScrollCallback(window, [] (GLFWwindow* window, double xoff, double yoff) {
-        float* systemTemp = reinterpret_cast<float*>(glfwGetWindowUserPointer(window));
+        void** callbackRes = reinterpret_cast<void**>(glfwGetWindowUserPointer(window));
+        float* systemTemp = reinterpret_cast<float*>(callbackRes[0]);
         if (yoff >= 0.) {
             *systemTemp += 0.025f;
         } else {
@@ -101,49 +114,92 @@ int main(int argc, const char** argv) {
         }
     });
 
+    glfwSetKeyCallback(window, [] (GLFWwindow* window, int key, int scancode, int action, int mods) {
+        if (action != GLFW_PRESS) return;
+
+        void** callbackRes = reinterpret_cast<void**>(glfwGetWindowUserPointer(window));
+        int* trials = reinterpret_cast<int*>(callbackRes[1]);
+
+        if (key == GLFW_KEY_UP)
+            *trials += 2500;
+        else if (key == GLFW_KEY_DOWN) {
+            *trials -= 2500;
+            if (*trials < 0)
+                *trials = 0;
+        }
+    });
+
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     auto textsheetData = loadTextsheetData(input.textsheetPath.c_str(), input.textsheetWidth, input.textsheetHeight);
     TextRenderResources textRes;
-    if (
-        !loadTextResources(
-            input.textVertPath.c_str(), input.textFragPath.c_str(),
-            textsheetData, input.textsheetWidth, input.textsheetHeight,
-            input.textsheetNumChars, aspect, textRes
-        )
-    ) return 1;
+    if (!loadTextResources(
+        input.textVertPath.c_str(), input.textFragPath.c_str(),
+        textsheetData, input.textsheetWidth, input.textsheetHeight,
+        input.textsheetNumChars, aspect, textRes
+    )) return 1;
 
     GridRenderResources gridRes;
     if (!makeGrid(input.gridWidth, input.gridHeight, input.gridVertPath.c_str(), input.gridFragPath.c_str(), gridRes))
         return 1;
 
+
+    float plotLeft = -1.f + input.textMargin + 11 * input.textWidth / aspect;
+    float plotTop = -1.f + input.textMargin + 8 * input.textWidth;
+    float plotWidth = 1.f - input.textMargin - plotLeft;
+    float plotHeight = plotTop - (-1.f + input.textMargin);
+    PlotRenderResources plotRes;
+    if (!makePlot(
+        input.plotVertPath.c_str(), input.plotFragPath.c_str(),
+        plotLeft, plotTop, plotWidth / (input.plotLength - 1), plotHeight / 2.0, 0.01f, input.plotLength, plotRes
+    )) return 1;
+
     auto lastSecondTime = std::chrono::steady_clock::now();
     int framesSinceLastSecond = 0;
     int fps = 0;
 
+    int framesUntilPlotRecords = input.plotSkip;
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, 1);
 
         for (int i = 0; i < input.metropolisStepsPerFrame; ++i)
             energy += metropolisStep(system, twister);
         subGridData(gridRes, system.cells.data());
         drawGrid(gridRes);
 
-        char textBuffer[64];
 
         float energyPerParticle = static_cast<float>(energy) / totalParticles;
-        sprintf(textBuffer, "E = %.3f", energyPerParticle);
-        drawText(textRes, textBuffer, -1.f + input.textMargin / aspect,
-            1.f - input.textMargin, input.textWidth);
+
+        if (framesUntilPlotRecords <= 0) {
+            appendPlotValue(plotRes, energyPerParticle);
+            framesUntilPlotRecords = input.plotSkip;
+        }
+        drawPlot(plotRes);
+        --framesUntilPlotRecords;
+
+        char textBuffer[64];
 
         sprintf(textBuffer, "T = %.3f", system.temperature);
         drawText(textRes, textBuffer, -1.f + input.textMargin / aspect,
+            1.f - input.textMargin, input.textWidth);
+
+        sprintf(textBuffer, "E = %.3f", energyPerParticle);
+        drawText(textRes, textBuffer, -1.f + input.textMargin / aspect,
             -1.f + input.textMargin + 2 * input.textWidth, input.textWidth);
 
-        sprintf(textBuffer, "%i", fps);
-        drawText(textRes, textBuffer, 1.f - (input.textMargin + 3 * input.textWidth) / aspect,
+        int fpsTextLength = sprintf(textBuffer, "%i", fps);
+        drawText(textRes, textBuffer, 1.f - (input.textMargin + fpsTextLength * input.textWidth) / aspect,
             1.f - input.textMargin, input.textWidth);
+
+        int trialsTextLength = sprintf(textBuffer, "%i", input.metropolisStepsPerFrame);
+        drawText(textRes, textBuffer, 1.f - (input.textMargin + trialsTextLength * input.textWidth) / aspect,
+            1.f - input.textMargin - 2 * input.textWidth, input.textWidth);
 
         glfwSwapBuffers(window);
         ++framesSinceLastSecond;
@@ -159,7 +215,11 @@ int main(int argc, const char** argv) {
         }
     }
 
-    printf("%i %i\n", energy, -countContancts(system));
+    int actualEnergy = -countContancts(system);
+    if (energy != actualEnergy) {
+        printf("Energy deviation! Calculated %i != actual %i (%+i)\n",
+            energy, actualEnergy, energy - actualEnergy);
+    }
 
     glfwTerminate();
 }
